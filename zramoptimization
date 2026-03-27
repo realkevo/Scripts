@@ -1,0 +1,148 @@
+#!/bin/bash
+# =====================================================
+# zramoptimization.sh
+# Parrot OS / Debian-based systems
+# MAXED-OUT ZRAM + RAM PERFORMANCE SCRIPT
+# Self-installing, auto-starting, overrides previous zram setups
+# =====================================================
+# Features:
+# - Takes over any existing zram/zramswap scripts
+# - Dynamically allocates 75% of RAM to zram swap
+# - Uses lz4 compression (fastest)
+# - Creates tmpfs for /tmp (~50% RAM)
+# - Applies kernel memory optimizations
+# - Installs zram-tools if missing and updates system
+# - Self-installing to /usr/local/bin
+# - Sets up systemd service to auto-run at boot
+# - Fully commented
+# =====================================================
+
+set -e
+
+INSTALL_PATH="/usr/local/bin/zramoptimization.sh"
+
+# ------------------------------
+# Stop and disable previous zram services
+# ------------------------------
+echo "==> Stopping and disabling any existing zram/zramswap services..."
+for svc in zramswap zramoptimization; do
+    if systemctl list-units --all | grep -q "$svc"; then
+        systemctl stop "$svc" || true
+        systemctl disable "$svc" || true
+    fi
+done
+
+# ------------------------------
+# Copy self to permanent location
+# ------------------------------
+if [[ "$0" != "$INSTALL_PATH" ]]; then
+    echo "==> Copying script to ${INSTALL_PATH}..."
+    cp "$0" "$INSTALL_PATH"
+    chmod +x "$INSTALL_PATH"
+    echo "==> Re-running from permanent location..."
+    exec "$INSTALL_PATH" "$@"
+fi
+
+chmod +x "$INSTALL_PATH"
+
+# ------------------------------
+# Update system and install zram-tools
+# ------------------------------
+echo "==> Updating system packages..."
+apt update -y
+echo "==> Installing zram-tools if missing..."
+apt install -y zram-tools
+
+# ------------------------------
+# Calculate 75% of total RAM dynamically
+# ------------------------------
+TOTAL_RAM_MB=$(awk '/MemTotal/ {printf "%.0f", $2/1024}' /proc/meminfo)
+ZRAM_SIZE_MB=$(( TOTAL_RAM_MB * 75 / 100 ))
+TMPFS_SIZE_MB=$(( TOTAL_RAM_MB / 2 ))
+
+echo "==> Total RAM detected: ${TOTAL_RAM_MB} MiB"
+echo "==> Allocating 75% to zram swap: ${ZRAM_SIZE_MB} MiB"
+echo "==> Allocating 50% RAM to /tmp tmpfs: ${TMPFS_SIZE_MB} MiB"
+
+# ------------------------------
+# Configure /etc/default/zramswap
+# ------------------------------
+echo "==> Overwriting /etc/default/zramswap..."
+cat > /etc/default/zramswap << EOF
+ENABLED=true
+ALGO=lz4
+PERCENT=75
+SIZE=${ZRAM_SIZE_MB}
+PRIORITY=100
+EOF
+
+# ------------------------------
+# Apply kernel memory optimizations
+# ------------------------------
+echo "==> Applying kernel memory settings..."
+sysctl -w vm.swappiness=10
+echo "vm.swappiness=10" >> /etc/sysctl.conf
+sysctl -w vm.vfs_cache_pressure=50
+echo "vm.vfs_cache_pressure=50" >> /etc/sysctl.conf
+
+# ------------------------------
+# Setup tmpfs for /tmp
+# ------------------------------
+echo "==> Setting up tmpfs for /tmp..."
+mount -o remount,size=${TMPFS_SIZE_MB}M /tmp || true
+if ! grep -q "^tmpfs\s\+/tmp" /etc/fstab; then
+    echo "tmpfs /tmp tmpfs defaults,size=${TMPFS_SIZE_MB}M 0 0" >> /etc/fstab
+fi
+
+# ------------------------------
+# Enable and start zramswap service
+# ------------------------------
+echo "==> Enabling and starting zramswap service..."
+systemctl enable zramswap.service
+systemctl daemon-reload
+systemctl start zramswap.service
+
+# ------------------------------
+# Setup systemd service for auto-start
+# ------------------------------
+SERVICE_PATH="/etc/systemd/system/zramoptimization.service"
+echo "==> Creating/overwriting systemd service for auto-start..."
+cat > "$SERVICE_PATH" << EOF
+[Unit]
+Description=Maxed-out ZRAM Optimization Script
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=${INSTALL_PATH}
+RemainAfterExit=yes
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable zramoptimization.service
+
+# ------------------------------
+# Show status
+# ------------------------------
+echo "==> ZRAM swap status:"
+swapon --show
+zramctl
+echo "==> /tmp tmpfs status:"
+df -h /tmp
+
+# ------------------------------
+# Summary
+# ------------------------------
+echo "==> MAXED-OUT ZRAM optimization complete!"
+echo "This script overrides any previous zram setup and will auto-run on boot."
+echo "- High-performance zram swap (~75% RAM)"
+echo "- tmpfs for /tmp (~50% RAM)"
+echo "- Optimized kernel settings (swappiness=10, vfs_cache_pressure=50)"
+echo "- zramswap service enabled"
+echo "- zramoptimization service ensures persistence and auto-restart"
+echo "Monitor performance with 'htop' or 'free -h'."

@@ -5,17 +5,6 @@
 # MAXED-OUT ZRAM + RAM PERFORMANCE SCRIPT
 # Self-installing, auto-starting, overrides previous zram setups
 # =====================================================
-# Features:
-# - Takes over any existing zram/zramswap scripts
-# - Dynamically allocates 75% of RAM to zram swap
-# - Uses lz4 compression (fastest)
-# - Creates tmpfs for /tmp (~50% RAM)
-# - Applies kernel memory optimizations
-# - Installs zram-tools if missing and updates system
-# - Self-installing to /usr/local/bin
-# - Sets up systemd service to auto-run at boot
-# - Fully commented
-# =====================================================
 
 set -e
 
@@ -103,7 +92,7 @@ systemctl daemon-reload
 systemctl start zramswap.service
 
 # ------------------------------
-# Setup systemd service for auto-start
+# Setup systemd service for auto-start (corrected)
 # ------------------------------
 SERVICE_PATH="/etc/systemd/system/zramoptimization.service"
 echo "==> Creating/overwriting systemd service for auto-start..."
@@ -116,8 +105,6 @@ After=network.target
 Type=oneshot
 ExecStart=${INSTALL_PATH}
 RemainAfterExit=yes
-Restart=always
-RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
@@ -125,18 +112,6 @@ EOF
 
 systemctl daemon-reload
 systemctl enable zramoptimization.service
-
-# ------------------------------
-# Summary
-# ------------------------------
-echo "==> MAXED-OUT ZRAM optimization complete!"
-echo "This script overrides any previous zram setup and will auto-run on boot."
-echo "- High-performance zram swap (~75% RAM)"
-echo "- tmpfs for /tmp (~50% RAM)"
-echo "- Optimized kernel settings (swappiness=10, vfs_cache_pressure=50)"
-echo "- zramswap service enabled"
-echo "- zramoptimization service ensures persistence and auto-restart"
-echo "Monitor performance with 'htop' or 'free -h'."
 
 # ------------------------------
 # User feedback - show status

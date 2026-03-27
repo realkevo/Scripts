@@ -127,15 +127,6 @@ systemctl daemon-reload
 systemctl enable zramoptimization.service
 
 # ------------------------------
-# Show status
-# ------------------------------
-echo "==> ZRAM swap status:"
-swapon --show
-zramctl
-echo "==> /tmp tmpfs status:"
-df -h /tmp
-
-# ------------------------------
 # Summary
 # ------------------------------
 echo "==> MAXED-OUT ZRAM optimization complete!"
@@ -146,3 +137,23 @@ echo "- Optimized kernel settings (swappiness=10, vfs_cache_pressure=50)"
 echo "- zramswap service enabled"
 echo "- zramoptimization service ensures persistence and auto-restart"
 echo "Monitor performance with 'htop' or 'free -h'."
+
+# ------------------------------
+# User feedback - show status
+# ------------------------------
+echo
+echo "==> Displaying live feedback for ZRAM and tmpfs status:"
+echo "--------------------------------------------------------"
+echo "Swap usage:"
+swapon --show
+echo
+echo "ZRAM devices:"
+zramctl
+echo
+echo "/tmp tmpfs usage:"
+df -h /tmp
+echo
+echo "zramoptimization.service status:"
+systemctl status zramoptimization.service --no-pager
+echo "--------------------------------------------------------"
+echo "Feedback complete! Your system is now using max-performance ZRAM swap and tmpfs."

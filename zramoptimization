@@ -11,7 +11,7 @@ set -e
 INSTALL_PATH="/usr/local/bin/zramoptimization.sh"
 
 # ------------------------------
-# Copy self to permanent location
+# Copy self to permanent location if not already there
 # ------------------------------
 if [[ "$0" != "$INSTALL_PATH" ]]; then
     echo "==> Copying script to ${INSTALL_PATH}..."
@@ -81,7 +81,30 @@ sudo systemctl daemon-reload
 sudo systemctl start zramswap.service
 
 # ------------------------------
-# Display feedback for user
+# Create systemd service for auto-start
+# ------------------------------
+SERVICE_FILE="/etc/systemd/system/zramoptimization.service"
+echo "==> Creating systemd service at ${SERVICE_FILE}..."
+sudo tee "$SERVICE_FILE" > /dev/null << EOF
+[Unit]
+Description=Maxed-out ZRAM Optimization Script
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=${INSTALL_PATH}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable zramoptimization.service
+sudo systemctl start zramoptimization.service
+
+# ------------------------------
+# Display live feedback for user
 # ------------------------------
 echo
 echo "==> Displaying live feedback for ZRAM and tmpfs status:"

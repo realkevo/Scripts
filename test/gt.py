@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/env python3
-# gt_pro.py - Multi-Region Trending Engine + API + Git Automation
+# gt_elite.py - Trend Intelligence Engine (Scored + Categorized + API + Git)
 
 import requests
 from bs4 import BeautifulSoup
@@ -7,7 +7,6 @@ import re
 from collections import Counter
 import time
 import os
-import random
 import subprocess
 import logging
 import json
@@ -22,7 +21,7 @@ TRENDS_FILE = os.path.join(BASE_DIR, "trends.txt")
 TRENDS_JSON = os.path.join(BASE_DIR, "trends.json")
 REGION_FILE = os.path.join(BASE_DIR, "regions.conf")
 
-TOP_N = 20
+TOP_N = 15
 GIT_REPO = BASE_DIR
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
@@ -44,185 +43,177 @@ REGIONS = {
 }
 # ---------------------------------------------------------------
 
-# ---------------------------- LOGGING ---------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-# ---------------------------------------------------------------
-
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 # ------------------------ REGION SETUP --------------------------
 def choose_regions():
-    """Select multiple regions and persist"""
     if os.path.exists(REGION_FILE):
         with open(REGION_FILE, "r") as f:
             saved = f.read().strip().split(",")
             if saved:
                 return [REGIONS[k][1] for k in saved if k in REGIONS]
 
-    print("\nSelect regions (comma separated, e.g. 1,2,3):\n")
+    print("\nSelect regions (comma separated):\n")
     for key, (name, _) in REGIONS.items():
         print(f"{key}. {name}")
 
-    choices = input("\nEnter choices: ").split(",")
-
+    choices = input("\nEnter: ").split(",")
     valid = [c.strip() for c in choices if c.strip() in REGIONS]
 
     if not valid:
-        print("Invalid input. Defaulting to Global.")
         valid = ["1"]
 
     with open(REGION_FILE, "w") as f:
         f.write(",".join(valid))
 
-    logging.info(f"Regions selected: {[REGIONS[v][0] for v in valid]}")
     return [REGIONS[v][1] for v in valid]
 
-
-# ------------------------ FETCHING ------------------------------
+# ------------------------ FETCH ------------------------------
 def fetch_url(url):
-    for attempt in range(MAX_RETRIES):
+    for _ in range(MAX_RETRIES):
         try:
-            time.sleep(random.uniform(1, 3))
             r = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
             r.raise_for_status()
             r.encoding = "utf-8"
             return r.text
-        except Exception as e:
-            logging.warning(f"{url} attempt {attempt+1} failed: {e}")
+        except:
+            time.sleep(2)
     return None
 
-
-# ------------------------ SCRAPING ------------------------------
+# ------------------------ SCRAPE ------------------------------
 def scrape_trends(url):
-    all_tags = []
     html = fetch_url(url)
+    tags = []
 
     if not html:
         return []
 
-    try:
-        soup = BeautifulSoup(html, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
 
-        for a in soup.select("a"):
-            text = a.get_text(strip=True)
+    for a in soup.select("a"):
+        t = a.get_text(strip=True)
+        if t.startswith("#"):
+            clean = re.sub(r"[^\w#]", "", t)
+            if re.match(r"^#[A-Za-z0-9_]{2,50}$", clean):
+                tags.append(clean)
 
-            if text.startswith("#"):
-                clean = re.sub(r"[^\w#]", "", text)
+    return tags
 
-                if re.match(r"^#[A-Za-z0-9_]{2,50}$", clean):
-                    all_tags.append(clean)
+# ------------------------ CATEGORY ---------------------------
+def categorize(tag):
+    t = tag.lower()
 
-    except Exception as e:
-        logging.error(f"Parse error: {e}")
+    if any(x in t for x in ["fc", "vs", "league", "match", "championship"]):
+        return "sports"
+    if any(x in t for x in ["news", "live", "breaking"]):
+        return "news"
+    if any(x in t for x in ["show", "music", "tv", "spotify"]):
+        return "entertainment"
 
-    return all_tags
+    return "general"
 
+# ------------------------ SCORING -----------------------------
+def score_tag(tag):
+    blacklist = ["fancon", "kpop", "bts", "enhypen", "vote", "stream"]
 
-# ------------------------ AGGREGATION ---------------------------
-def aggregate_trends(urls):
+    t = tag.lower()
+
+    if any(b in t for b in blacklist):
+        return -100
+
+    score = 0
+
+    score += max(0, 30 - len(tag))
+
+    if tag.isupper():
+        score += 5
+
+    if any(x in t for x in ["fc", "vs", "live", "news", "championship"]):
+        score += 15
+
+    return score
+
+# ------------------------ AGGREGATE ---------------------------
+def aggregate(urls):
     combined = []
+    for u in urls:
+        combined.extend(scrape_trends(u))
 
-    for url in urls:
-        tags = scrape_trends(url)
-        combined.extend(tags)
+    counts = Counter(combined)
 
-    if not combined:
-        return []
+    scored = []
+    for tag, freq in counts.items():
+        s = score_tag(tag)
+        if s > 0:
+            total_score = s + freq * 5
+            scored.append((tag, total_score, categorize(tag)))
 
-    ranked = [tag for tag, _ in Counter(combined).most_common(TOP_N * 3)]
-    return ranked
+    scored.sort(key=lambda x: x[1], reverse=True)
 
+    return scored[:TOP_N]
 
-# ------------------------ STORAGE -------------------------------
+# ------------------------ STORAGE -----------------------------
 def load_previous():
     if not os.path.exists(TRENDS_JSON):
         return []
-
     try:
-        with open(TRENDS_JSON, "r") as f:
+        with open(TRENDS_JSON) as f:
             return json.load(f).get("trends", [])
     except:
         return []
 
-
-def save_trends(tags):
-    if not tags:
-        return []
-
-    weights = [len(tags) - i for i in range(len(tags))]
-    selected = list(set(random.choices(tags, weights=weights, k=min(TOP_N * 2, len(tags)))))
-    final = selected[:TOP_N]
-
+def save_trends(data):
     try:
+        tags_only = [t["tag"] for t in data]
+
         with open(TRENDS_FILE, "w") as f:
-            f.write("\n".join(final))
+            f.write("\n".join(tags_only))
 
         with open(TRENDS_JSON, "w") as f:
             json.dump({
                 "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
-                "trends": final
+                "trends": data
             }, f, indent=2)
 
-        logging.info(f"Saved {len(final)} trends")
-        return final
-
+        return tags_only
     except Exception as e:
-        logging.error(f"Save error: {e}")
+        logging.error(e)
         return []
 
-
-# ------------------------ GIT -----------------------------------
+# ------------------------ GIT -----------------------------
 def git_push():
     try:
         diff = subprocess.run(["git", "-C", GIT_REPO, "diff", "--quiet"])
-
         if diff.returncode == 0:
-            logging.info("No changes to commit")
             return
 
         subprocess.run(["git", "-C", GIT_REPO, "add", "."], check=True)
-
-        msg = f"Auto trends update {time.strftime('%Y-%m-%d %H:%M:%S')}"
-        subprocess.run(["git", "-C", GIT_REPO, "commit", "-m", msg], check=True)
-
+        subprocess.run(["git", "-C", GIT_REPO, "commit", "-m", "auto trends"], check=True)
         subprocess.run(["git", "-C", GIT_REPO, "push"], check=True)
-
-        logging.info("Git push complete")
-
     except Exception as e:
-        logging.error(f"Git error: {e}")
+        logging.error(e)
 
-
-# ------------------------ API SERVER ----------------------------
-class TrendHandler(BaseHTTPRequestHandler):
+# ------------------------ API -----------------------------
+class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/trends":
             try:
                 with open(TRENDS_JSON) as f:
                     data = f.read()
-
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(data.encode())
-
             except:
                 self.send_response(500)
                 self.end_headers()
 
-
 def start_api():
-    server = HTTPServer(("0.0.0.0", API_PORT), TrendHandler)
-    logging.info(f"API running on port {API_PORT}")
+    server = HTTPServer(("0.0.0.0", API_PORT), Handler)
     server.serve_forever()
 
-
-# ------------------------ MAIN LOOP -----------------------------
+# ------------------------ MAIN -----------------------------
 def main():
-    logging.info("Starting Trend Engine...")
-
     urls = choose_regions()
 
     if ENABLE_API:
@@ -230,26 +221,23 @@ def main():
 
     while True:
         try:
-            tags = aggregate_trends(urls)
+            ranked = aggregate(urls)
 
-            if not tags:
-                logging.warning("No data scraped")
-                time.sleep(UPDATE_INTERVAL)
-                continue
+            formatted = [
+                {"tag": t[0], "score": t[1], "category": t[2]}
+                for t in ranked
+            ]
 
-            previous = load_previous()
-            current = save_trends(tags)
+            prev = load_previous()
+            curr = save_trends(formatted)
 
-            if current != previous:
+            if curr != prev:
                 git_push()
-            else:
-                logging.info("No meaningful changes")
 
         except Exception as e:
-            logging.error(f"Fatal loop error: {e}")
+            logging.error(e)
 
         time.sleep(UPDATE_INTERVAL)
-
 
 if __name__ == "__main__":
     main()

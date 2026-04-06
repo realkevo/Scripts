@@ -12,13 +12,11 @@ import logging
 import random
 
 # ---------------- CONFIG ----------------
-UPDATE_INTERVAL = 30 * 60
+UPDATE_INTERVAL = 30 * 60  # 30 minutes
 BASE_DIR = os.path.expanduser("~/scripts")
-
 TRENDS_FILE = os.path.join(BASE_DIR, "trends.txt")
 TOP_N = 15
 GIT_REPO = BASE_DIR
-
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 REQUEST_TIMEOUT = 10
 
@@ -39,7 +37,8 @@ CATEGORIES = {
     "1": "General",
     "2": "Sports",
     "3": "Entertainment",
-    "4": "Politics"
+    "4": "Politics",
+    "5": "Technology"
 }
 
 # ---------------- INPUT ----------------
@@ -95,6 +94,7 @@ def score_tag(tag, category="General"):
         "Sports": ["fc","vs","cup","match","game","league"],
         "Politics": ["vote","election","president","senate"],
         "Entertainment": ["movie","tv","series","album","song"],
+        "Technology": ["tech","ai","aiart","app","software","hardware","gadget","robot"],
     }
     for kw in category_keywords.get(category, []):
         if kw in tag.lower():
@@ -116,6 +116,13 @@ def save_list(path, data):
     with open(path, "w") as f:
         f.write("\n".join(data))
     logging.info(f"Saved {len(data)} trends to {path}")
+
+    # Termux clipboard copy
+    try:
+        subprocess.run(["termux-clipboard-set", "\n".join(data)], check=True)
+        logging.info("Trends copied to Termux clipboard")
+    except Exception:
+        logging.warning("Clipboard copy failed. Make sure termux-api is installed.")
 
 # ---------------- GIT ----------------
 def git_push():

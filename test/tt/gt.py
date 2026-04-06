@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/env python3
-# gt_trends24.py - Regional & Category Trending Hashtag Scraper + Git Push
+# gt_trends24_upgraded.py - Regional & Category Trending Hashtag Scraper + Git Push (overwrite always)
 
 import requests
 from bs4 import BeautifulSoup
@@ -88,17 +88,24 @@ def scrape_trends24(url):
     return tags
 
 # ---------------- SCORE ----------------
-def score_tag(tag):
+def score_tag(tag, category="General"):
     score = max(0, 25 - len(tag))
-    if any(x in tag.lower() for x in ["fc","vs","cup","match","game"]):
-        score += 10
+    # Category-based scoring boost
+    category_keywords = {
+        "Sports": ["fc","vs","cup","match","game","league"],
+        "Politics": ["vote","election","president","senate"],
+        "Entertainment": ["movie","tv","series","album","song"],
+    }
+    for kw in category_keywords.get(category, []):
+        if kw in tag.lower():
+            score += 10
     return score
 
-def process_tags(tags):
+def process_tags(tags, category="General"):
     counts = Counter(tags)
     scored = []
     for tag, freq in counts.items():
-        s = score_tag(tag)
+        s = score_tag(tag, category)
         if s > 0:
             scored.append((tag, s + freq*5))
     scored.sort(key=lambda x: x[1], reverse=True)
@@ -113,11 +120,11 @@ def save_list(path, data):
 # ---------------- GIT ----------------
 def git_push():
     try:
-        if subprocess.run(["git","-C",GIT_REPO,"diff","--quiet"]).returncode == 0:
-            logging.info("No changes to commit")
-            return
-        subprocess.run(["git","-C",GIT_REPO,"add","."], check=True)
-        subprocess.run(["git","-C",GIT_REPO,"commit","-m","trends update"], check=True)
+        subprocess.run(["git","-C",GIT_REPO,"add",TRENDS_FILE], check=True)
+        commit_msg = "Auto trends update"
+        result = subprocess.run(["git","-C",GIT_REPO,"commit","-m",commit_msg], capture_output=True, text=True)
+        if "nothing to commit" in result.stdout.lower():
+            logging.info("No changes detected — overwriting trends and forcing push")
         subprocess.run(["git","-C",GIT_REPO,"push"], check=True)
         logging.info("Git push complete")
     except Exception as e:
@@ -140,7 +147,7 @@ def main():
         if not all_tags:
             logging.warning("No trends scraped")
         else:
-            processed = process_tags(all_tags)
+            processed = process_tags(all_tags, category)
             save_list(TRENDS_FILE, processed)
             git_push()
 

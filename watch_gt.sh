@@ -1,20 +1,22 @@
-#!/data/data/com.termux/files/usr/bin/env bash
-# Watchdog for gt.py - ensures it always runs (checks every 30 minutes)
+#!/data/data/com.termux/files/usr/bin/sh
+# Watchdog for scraper.py - ensures it is always running
 
-SCRIPT="$HOME/scripts/gt.py"
+SCRIPT="$HOME/scripts/scraper.py"
 LOG="$HOME/scripts/gt_watch.log"
 
 # Prevent Termux from sleeping
 termux-wake-lock
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Watchdog started" >> "$LOG"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Watchdog started for scraper.py" >> "$LOG"
 
 while true; do
-    # Check if gt.py is running
+    # Check if scraper.py is running
     if ! pgrep -f "$SCRIPT" > /dev/null; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] gt.py not running, starting..." >> "$LOG"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] scraper.py not running. Restarting..." >> "$LOG"
         nohup python3 "$SCRIPT" >> "$LOG" 2>&1 &
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] gt.py started" >> "$LOG"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] scraper.py started." >> "$LOG"
     fi
-    sleep 1800  # wait 30 minutes before next check
+
+    # Wait 30 minutes before checking again
+    sleep 1800
 done

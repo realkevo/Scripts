@@ -1,4 +1,3 @@
-```python
 #!/data/data/com.termux/files/usr/bin/env python3
 # gt_trends24_upgraded.py
 #
